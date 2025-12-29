@@ -93,9 +93,24 @@ export function OrderForm({
           description: `订单号: ${result.orderNo}`,
         });
 
-        if (result.paymentUrl) {
-          // 跳转到支付页面
-          window.location.href = result.paymentUrl;
+        if (result.paymentForm) {
+          // 创建隐藏表单并 POST 提交到支付网关
+          const form = document.createElement("form");
+          form.method = "POST";
+          form.action = result.paymentForm.actionUrl;
+          form.style.display = "none";
+
+          // 添加所有参数为隐藏字段
+          Object.entries(result.paymentForm.params).forEach(([key, value]) => {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = key;
+            input.value = value;
+            form.appendChild(input);
+          });
+
+          document.body.appendChild(form);
+          form.submit();
         } else {
           // 跳转到订单结果页
           router.push(`/order/result?orderNo=${result.orderNo}`);

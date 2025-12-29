@@ -6,7 +6,7 @@ import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
 import { headers } from "next/headers";
 import { createOrderSchema, type CreateOrderInput } from "@/lib/validations/order";
-import { createPayment } from "@/lib/payment/ldc";
+import { createPayment, type PaymentFormData } from "@/lib/payment/ldc";
 import { revalidatePath } from "next/cache";
 
 /**
@@ -33,7 +33,7 @@ export interface CreateOrderResult {
   success: boolean;
   message: string;
   orderNo?: string;
-  paymentUrl?: string;
+  paymentForm?: PaymentFormData;
 }
 
 /**
@@ -130,11 +130,11 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     });
 
     // 4. 调用支付接口（如果是 LDC 支付）
-    let paymentUrl: string | undefined;
+    let paymentForm: PaymentFormData | undefined;
     if (paymentMethod === "ldc") {
       try {
         const siteUrl = await getSiteUrl();
-        paymentUrl = createPayment(
+        paymentForm = createPayment(
           result.order.orderNo,
           result.totalAmount,
           product.name,
@@ -155,7 +155,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       success: true,
       message: "订单创建成功",
       orderNo: result.order.orderNo,
-      paymentUrl,
+      paymentForm,
     };
   } catch (error) {
     console.error("创建订单失败:", error);

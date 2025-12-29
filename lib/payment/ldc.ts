@@ -99,9 +99,14 @@ export function verifySign(params: NotifyParams, secret: string): boolean {
   return sign === expectedSign;
 }
 
+export interface PaymentFormData {
+  actionUrl: string;
+  params: Record<string, string>;
+}
+
 /**
  * 创建支付订单
- * 返回支付页面 URL（直接拼接参数，让浏览器跳转以绕过 Cloudflare）
+ * 返回表单数据，由前端创建表单并 POST 提交（绕过 Cloudflare）
  * @param orderId 订单号
  * @param amount 金额
  * @param productName 商品名称
@@ -112,7 +117,7 @@ export function createPayment(
   amount: number,
   productName: string,
   siteUrl: string
-): string {
+): PaymentFormData {
   let gateway = process.env.LDC_GATEWAY || "https://credit.linux.do/epay";
   const pid = process.env.LDC_PID;
   const secret = process.env.LDC_SECRET;
@@ -139,19 +144,22 @@ export function createPayment(
 
   const sign = generateSign(params as unknown as Record<string, string>, secret);
 
-  // 构建完整的支付 URL（使用 GET 方式让浏览器直接跳转）
-  const searchParams = new URLSearchParams({
+  const formParams = {
     ...params,
     sign,
     sign_type: "MD5",
-  } as Record<string, string>);
-
-  const paymentUrl = `${gateway}/pay/submit.php?${searchParams.toString()}`;
+  } as Record<string, string>;
 
   // 调试日志
-  console.log("LDC 支付 URL:", paymentUrl);
+  console.log("LDC 支付表单数据:", {
+    actionUrl: `${gateway}/pay/submit.php`,
+    params: formParams,
+  });
 
-  return paymentUrl;
+  return {
+    actionUrl: `${gateway}/pay/submit.php`,
+    params: formParams,
+  };
 }
 
 /**
