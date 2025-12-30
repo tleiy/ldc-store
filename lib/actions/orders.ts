@@ -360,6 +360,8 @@ export async function getUserOrders() {
       return { success: false, message: "请先登录", data: [] };
     }
 
+    console.log("[getUserOrders] 查询用户订单, userId:", user.id);
+
     const userOrders = await db.query.orders.findMany({
       where: eq(orders.userId, user.id),
       with: {
@@ -373,6 +375,8 @@ export async function getUserOrders() {
       },
       orderBy: [desc(orders.createdAt)],
     });
+
+    console.log("[getUserOrders] 查询到订单数量:", userOrders.length);
 
     const ordersWithCards = userOrders.map((order) => {
       // 仅当订单已完成时才显示卡密

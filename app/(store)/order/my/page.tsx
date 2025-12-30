@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { getUserOrders } from "@/lib/actions/orders";
@@ -67,14 +67,36 @@ const statusConfig: Record<
 export default function MyOrdersPage() {
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const [orders, setOrders] = useState<OrderData[] | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // 检查是否是 Linux DO 登录用户
   const user = session?.user as { provider?: string } | undefined;
   const isLoggedIn = user?.provider === "linux-do";
+
+  const loadOrders = useCallback(async (showRefreshState = false) => {
+    if (showRefreshState) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    
+    try {
+      const result = await getUserOrders();
+      if (result.success) {
+        setOrders(result.data as OrderData[]);
+      } else {
+        toast.error(result.message || "获取订单失败");
+      }
+    } catch {
+      toast.error("获取订单失败");
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (sessionStatus === "loading") return;
@@ -85,20 +107,7 @@ export default function MyOrdersPage() {
     }
 
     loadOrders();
-  }, [sessionStatus, isLoggedIn, router]);
-
-  const loadOrders = () => {
-    setIsLoading(true);
-    startTransition(async () => {
-      const result = await getUserOrders();
-      if (result.success) {
-        setOrders(result.data as OrderData[]);
-      } else {
-        toast.error(result.message || "获取订单失败");
-      }
-      setIsLoading(false);
-    });
-  };
+  }, [sessionStatus, isLoggedIn, router, loadOrders]);
 
   const copyToClipboard = async (text: string, index: number) => {
     try {
@@ -143,10 +152,10 @@ export default function MyOrdersPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={loadOrders}
-          disabled={isPending}
+          onClick={() => loadOrders(true)}
+          disabled={isRefreshing}
         >
-          <RefreshCw className={`mr-2 h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
+          <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
           刷新
         </Button>
       </div>
@@ -273,4 +282,3 @@ export default function MyOrdersPage() {
     </div>
   );
 }
-

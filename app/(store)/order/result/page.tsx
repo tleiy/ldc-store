@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition, use } from "react";
+import { useEffect, useState, useCallback, use } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,6 @@ export default function OrderResultPage({ searchParams }: OrderResultPageProps) 
   const { data: session, status: sessionStatus } = useSession();
   const [orderNo, setOrderNo] = useState(params.out_trade_no || "");
 
-  const [isPending, startTransition] = useTransition();
   const [order, setOrder] = useState<OrderData | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [error, setError] = useState("");
@@ -60,9 +59,30 @@ export default function OrderResultPage({ searchParams }: OrderResultPageProps) 
     }
   }, [params.out_trade_no]);
 
+  const loadOrder = useCallback(async () => {
+    if (!orderNo) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const result = await getOrderByNo(orderNo);
+      if (result.success && result.data) {
+        setOrder(result.data as OrderData);
+      } else {
+        setError(result.message || "获取订单失败");
+      }
+    } catch {
+      setError("获取订单失败");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [orderNo]);
+
   // 加载订单数据
   useEffect(() => {
     if (sessionStatus === "loading") return;
+    
     if (!orderNo) {
       setIsLoading(false);
       return;
@@ -75,19 +95,7 @@ export default function OrderResultPage({ searchParams }: OrderResultPageProps) 
     }
 
     loadOrder();
-  }, [sessionStatus, orderNo, isLoggedIn]);
-
-  const loadOrder = () => {
-    startTransition(async () => {
-      const result = await getOrderByNo(orderNo);
-      if (result.success && result.data) {
-        setOrder(result.data as OrderData);
-      } else {
-        setError(result.message || "获取订单失败");
-      }
-      setIsLoading(false);
-    });
-  };
+  }, [sessionStatus, orderNo, isLoggedIn, loadOrder]);
 
   const copyToClipboard = async (text: string, index: number) => {
     try {
