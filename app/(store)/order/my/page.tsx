@@ -5,7 +5,6 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { getUserOrders } from "@/lib/actions/orders";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
@@ -16,7 +15,7 @@ import {
   Clock,
   XCircle,
   AlertCircle,
-  ShoppingBag,
+  ChevronRight,
   RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
@@ -35,32 +34,32 @@ interface OrderData {
 
 const statusConfig: Record<
   string,
-  { label: string; color: string; icon: React.ReactNode }
+  { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: React.ReactNode }
 > = {
   pending: {
     label: "待支付",
-    color: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-    icon: <Clock className="h-4 w-4" />,
+    variant: "outline",
+    icon: <Clock className="h-3 w-3" />,
   },
   paid: {
     label: "已支付",
-    color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-    icon: <CheckCircle2 className="h-4 w-4" />,
+    variant: "default",
+    icon: <CheckCircle2 className="h-3 w-3" />,
   },
   completed: {
     label: "已完成",
-    color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
-    icon: <CheckCircle2 className="h-4 w-4" />,
+    variant: "default",
+    icon: <CheckCircle2 className="h-3 w-3" />,
   },
   expired: {
     label: "已过期",
-    color: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-    icon: <XCircle className="h-4 w-4" />,
+    variant: "secondary",
+    icon: <XCircle className="h-3 w-3" />,
   },
   refunded: {
     label: "已退款",
-    color: "bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-300",
-    icon: <AlertCircle className="h-4 w-4" />,
+    variant: "destructive",
+    icon: <AlertCircle className="h-3 w-3" />,
   },
 };
 
@@ -68,11 +67,11 @@ export default function MyOrdersPage() {
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
   const [orders, setOrders] = useState<OrderData[] | null>(null);
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [copiedCard, setCopiedCard] = useState<string | null>(null);
 
-  // 检查是否是 Linux DO 登录用户
   const user = session?.user as { provider?: string } | undefined;
   const isLoggedIn = user?.provider === "linux-do";
 
@@ -82,7 +81,7 @@ export default function MyOrdersPage() {
     } else {
       setIsLoading(true);
     }
-    
+
     try {
       const result = await getUserOrders();
       if (result.success) {
@@ -109,23 +108,40 @@ export default function MyOrdersPage() {
     loadOrders();
   }, [sessionStatus, isLoggedIn, router, loadOrders]);
 
-  const copyToClipboard = async (text: string, index: number) => {
+  const copyToClipboard = async (text: string, cardId: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setCopiedIndex(index);
-      toast.success("已复制到剪贴板");
-      setTimeout(() => setCopiedIndex(null), 2000);
+      setCopiedCard(cardId);
+      toast.success("已复制");
+      setTimeout(() => setCopiedCard(null), 2000);
     } catch {
       toast.error("复制失败");
     }
   };
 
+  const copyAllCards = async (cards: string[]) => {
+    try {
+      await navigator.clipboard.writeText(cards.join("\n"));
+      toast.success(`已复制 ${cards.length} 张卡密`);
+    } catch {
+      toast.error("复制失败");
+    }
+  };
+
+  const formatDate = (date: Date) => {
+    return new Date(date).toLocaleString("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   if (sessionStatus === "loading" || isLoading) {
     return (
       <div className="container mx-auto max-w-2xl px-4 py-12">
-        <div className="flex flex-col items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <p className="mt-4 text-muted-foreground">加载中...</p>
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       </div>
     );
@@ -136,148 +152,146 @@ export default function MyOrdersPage() {
   }
 
   return (
-    <div className="container mx-auto max-w-2xl px-4 py-12">
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600">
-            <ShoppingBag className="h-8 w-8 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-            我的订单
-          </h1>
-          <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-            查看您的历史订单和卡密信息
-          </p>
-        </div>
+    <div className="container mx-auto max-w-2xl px-4 py-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-semibold">我的订单</h1>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={() => loadOrders(true)}
           disabled={isRefreshing}
         >
-          <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
-          刷新
+          <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
         </Button>
       </div>
 
-      {/* Order List */}
+      {/* Orders */}
       {orders && orders.length > 0 ? (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            共 {orders.length} 个订单
-          </p>
-
-          {orders.map((order, orderIndex) => {
+        <div className="divide-y border rounded-lg bg-card">
+          {orders.map((order) => {
             const status = statusConfig[order.status] || statusConfig.pending;
+            const isExpanded = expandedOrder === order.orderNo;
+            const hasCards = order.cards && order.cards.length > 0;
 
             return (
-              <Card key={order.orderNo}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-base">
-                        {order.productName}
-                      </CardTitle>
-                      <p className="mt-1 text-sm text-zinc-500">
-                        订单号: {order.orderNo}
-                      </p>
+              <div key={order.orderNo}>
+                {/* Order Row */}
+                <button
+                  className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-muted/50 transition-colors"
+                  onClick={() => setExpandedOrder(isExpanded ? null : order.orderNo)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{order.productName}</span>
+                      <Badge variant={status.variant} className="shrink-0 text-xs">
+                        {status.icon}
+                        <span className="ml-1">{status.label}</span>
+                      </Badge>
                     </div>
-                    <Badge className={status.color}>
-                      {status.icon}
-                      <span className="ml-1">{status.label}</span>
-                    </Badge>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                      <span>{formatDate(order.createdAt)}</span>
+                      <span>×{order.quantity}</span>
+                      <span className="font-medium text-foreground">{order.totalAmount} LDC</span>
+                    </div>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Order Info */}
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-zinc-500">数量</span>
-                      <p className="font-medium">{order.quantity} 件</p>
+                  <ChevronRight
+                    className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform ${
+                      isExpanded ? "rotate-90" : ""
+                    }`}
+                  />
+                </button>
+
+                {/* Expanded Content */}
+                {isExpanded && (
+                  <div className="px-4 pb-4 border-t bg-muted/30">
+                    <div className="py-3 space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">订单号</span>
+                        <span className="font-mono text-xs">{order.orderNo}</span>
+                      </div>
+                      {order.paidAt && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">支付时间</span>
+                          <span>{new Date(order.paidAt).toLocaleString("zh-CN")}</span>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <span className="text-zinc-500">金额</span>
-                      <p className="font-medium text-violet-600">
-                        {order.totalAmount} LDC
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-zinc-500">下单时间</span>
-                      <p className="font-medium">
-                        {new Date(order.createdAt).toLocaleString("zh-CN")}
-                      </p>
-                    </div>
-                    {order.paidAt && (
-                      <div>
-                        <span className="text-zinc-500">支付时间</span>
-                        <p className="font-medium">
-                          {new Date(order.paidAt).toLocaleString("zh-CN")}
-                        </p>
+
+                    {/* Cards */}
+                    {hasCards && (
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium flex items-center gap-1.5">
+                            <Package className="h-4 w-4" />
+                            卡密 ({order.cards.length})
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyAllCards(order.cards);
+                            }}
+                          >
+                            <Copy className="h-3 w-3 mr-1" />
+                            复制全部
+                          </Button>
+                        </div>
+                        <div className="space-y-1">
+                          {order.cards.map((card, idx) => {
+                            const cardId = `${order.orderNo}-${idx}`;
+                            return (
+                              <div
+                                key={idx}
+                                className="flex items-center gap-2 p-2 rounded bg-background border text-sm group"
+                              >
+                                <code className="flex-1 font-mono text-xs break-all select-all">
+                                  {card}
+                                </code>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    copyToClipboard(card, cardId);
+                                  }}
+                                >
+                                  {copiedCard === cardId ? (
+                                    <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                  ) : (
+                                    <Copy className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pending Notice */}
+                    {order.status === "pending" && (
+                      <div className="mt-3 p-2 rounded bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 text-xs">
+                        订单待支付，请尽快完成支付
                       </div>
                     )}
                   </div>
-
-                  {/* Cards */}
-                  {order.cards && order.cards.length > 0 && (
-                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950">
-                      <div className="mb-2 flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                        <Package className="h-4 w-4" />
-                        卡密信息
-                      </div>
-                      <div className="space-y-2">
-                        {order.cards.map((card, cardIndex) => {
-                          const globalIndex = orderIndex * 1000 + cardIndex;
-                          return (
-                            <div
-                              key={cardIndex}
-                              className="flex items-center justify-between rounded bg-white p-2 dark:bg-zinc-900"
-                            >
-                              <code className="text-sm font-mono break-all">
-                                {card}
-                              </code>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 flex-shrink-0"
-                                onClick={() => copyToClipboard(card, globalIndex)}
-                              >
-                                {copiedIndex === globalIndex ? (
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                                ) : (
-                                  <Copy className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Pending Payment Notice */}
-                  {order.status === "pending" && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-                      <p className="flex items-center gap-2">
-                        <Clock className="h-4 w-4" />
-                        订单待支付，请尽快完成支付
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                )}
+              </div>
             );
           })}
         </div>
       ) : (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Package className="mx-auto h-12 w-12 text-zinc-300" />
-            <p className="mt-4 text-zinc-500">暂无订单</p>
-            <Button asChild className="mt-4">
-              <Link href="/">去购物</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="text-center py-16 border rounded-lg bg-card">
+          <Package className="h-10 w-10 mx-auto text-muted-foreground/50" />
+          <p className="mt-3 text-muted-foreground">暂无订单</p>
+          <Button asChild variant="outline" className="mt-4" size="sm">
+            <Link href="/">去购物</Link>
+          </Button>
+        </div>
       )}
     </div>
   );
