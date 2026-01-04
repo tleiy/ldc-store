@@ -5,7 +5,7 @@ import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { headers } from "next/headers";
 import { createOrderSchema, type CreateOrderInput } from "@/lib/validations/order";
-import { createPayment, refundOrder, type PaymentFormData } from "@/lib/payment/ldc";
+import { createPayment, refundOrder, isRefundEnabled, type PaymentFormData } from "@/lib/payment/ldc";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { requireAdmin } from "@/lib/auth-utils";
@@ -518,11 +518,17 @@ export async function getOrderByNo(orderNo: string) {
 /**
  * 用户申请退款
  * 仅已完成的订单可以申请退款
+ * 需要配置 LDC_PROXY_URL 才能使用退款功能
  */
 export async function requestRefund(
   orderNo: string,
   reason: string
 ): Promise<{ success: boolean; message: string }> {
+  // 检查退款功能是否启用
+  if (!isRefundEnabled()) {
+    return { success: false, message: "退款功能未启用" };
+  }
+
   try {
     const session = await auth();
     const user = session?.user as { id?: string; provider?: string } | undefined;
@@ -579,11 +585,17 @@ export async function requestRefund(
 /**
  * 管理员审批退款 - 通过
  * 调用 LDC 退款接口完成退款
+ * 需要配置 LDC_PROXY_URL 才能使用退款功能
  */
 export async function approveRefund(
   orderId: string,
   adminRemark?: string
 ): Promise<{ success: boolean; message: string }> {
+  // 检查退款功能是否启用
+  if (!isRefundEnabled()) {
+    return { success: false, message: "退款功能未启用，请配置 LDC_PROXY_URL" };
+  }
+
   try {
     await requireAdmin();
   } catch {
@@ -732,5 +744,13 @@ export async function getRefundOrders() {
       data: [],
     };
   }
+}
+
+/**
+ * 获取退款功能是否启用
+ * 前端根据此状态决定是否显示退款相关按钮
+ */
+export async function getRefundEnabled(): Promise<boolean> {
+  return isRefundEnabled();
 }
 

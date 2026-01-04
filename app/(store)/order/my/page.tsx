@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useTransition } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { getUserOrders, requestRefund } from "@/lib/actions/orders";
+import { getUserOrders, requestRefund, getRefundEnabled } from "@/lib/actions/orders";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -101,6 +101,7 @@ export default function MyOrdersPage() {
   const [refundOrderNo, setRefundOrderNo] = useState<string | null>(null);
   const [refundReason, setRefundReason] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [refundEnabled, setRefundEnabled] = useState(false);
 
   const user = session?.user as { provider?: string } | undefined;
   const isLoggedIn = user?.provider === "linux-do";
@@ -113,7 +114,14 @@ export default function MyOrdersPage() {
     }
 
     try {
-      const result = await getUserOrders();
+      // 并行获取订单和退款功能状态
+      const [result, isRefundEnabled] = await Promise.all([
+        getUserOrders(),
+        getRefundEnabled(),
+      ]);
+      
+      setRefundEnabled(isRefundEnabled);
+      
       if (result.success) {
         setOrders(result.data as OrderData[]);
       } else {
@@ -330,8 +338,8 @@ export default function MyOrdersPage() {
                       </div>
                     )}
 
-                    {/* Refund Button */}
-                    {order.status === "completed" && (
+                    {/* Refund Button - 仅当退款功能启用时显示 */}
+                    {refundEnabled && order.status === "completed" && (
                       <div className="mt-3 flex justify-end">
                         <Button
                           variant="outline"

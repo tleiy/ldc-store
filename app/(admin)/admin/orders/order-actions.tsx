@@ -28,9 +28,10 @@ interface OrderActionsProps {
   orderNo: string;
   status: string;
   refundReason?: string | null;
+  refundEnabled?: boolean;
 }
 
-export function OrderActions({ orderId, orderNo, status, refundReason }: OrderActionsProps) {
+export function OrderActions({ orderId, orderNo, status, refundReason, refundEnabled = false }: OrderActionsProps) {
   const [isPending, startTransition] = useTransition();
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -107,7 +108,7 @@ export function OrderActions({ orderId, orderNo, status, refundReason }: OrderAc
               </DropdownMenuItem>
             </>
           )}
-          {status === "refund_pending" && (
+          {status === "refund_pending" && refundEnabled && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem 
@@ -123,6 +124,15 @@ export function OrderActions({ orderId, orderNo, status, refundReason }: OrderAc
               >
                 <XCircle className="mr-2 h-4 w-4" />
                 拒绝退款
+              </DropdownMenuItem>
+            </>
+          )}
+          {status === "refund_pending" && !refundEnabled && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled className="text-muted-foreground">
+                <RotateCcw className="mr-2 h-4 w-4" />
+                退款功能未启用
               </DropdownMenuItem>
             </>
           )}

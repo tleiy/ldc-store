@@ -6,6 +6,15 @@
 import crypto from "crypto";
 
 /**
+ * 检查是否启用退款功能
+ * 仅当配置了 LDC_PROXY_URL 时才启用退款功能
+ * 因为官方的 /api.php 接口受 Cloudflare 保护，无法从 Vercel 直接调用
+ */
+export function isRefundEnabled(): boolean {
+  return !!process.env.LDC_PROXY_URL;
+}
+
+/**
  * 获取 API 端点 URL
  * 如果设置了 LDC_PROXY_URL 环境变量，则使用代理地址
  * 否则使用官方的 /api.php 接口

@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { db } from "@/lib/db";
+import { isRefundEnabled } from "@/lib/payment/ldc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,6 +72,7 @@ const paymentMethodLabels: Record<string, string> = {
 
 export default async function OrdersPage() {
   const orders = await getOrders();
+  const refundEnabled = isRefundEnabled();
 
   return (
     <div className="space-y-6">
@@ -199,6 +201,7 @@ export default async function OrdersPage() {
                             orderNo={order.orderNo}
                             status={order.status}
                             refundReason={order.refundReason}
+                            refundEnabled={refundEnabled}
                           />
                         </TableCell>
                       </TableRow>
