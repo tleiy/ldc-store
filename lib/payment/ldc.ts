@@ -196,7 +196,8 @@ export async function queryPaymentOrder(
 
 /**
  * 退款
- * 使用 GET 请求调用退款接口
+ * 使用 POST 请求调用退款接口
+ * 文档: POST /api.php, 支持 application/x-www-form-urlencoded 或 application/json
  */
 export async function refundOrder(
   tradeNo: string,
@@ -216,40 +217,49 @@ export async function refundOrder(
     gateway = gateway + "/epay";
   }
 
-  const params = new URLSearchParams({
-    act: "refund",
+  const url = `${gateway}/api.php`;
+  const body = new URLSearchParams({
     pid,
     key: secret,
     trade_no: tradeNo,
     money,
   });
 
-  const url = `${gateway}/api.php?${params}`;
-  
-  if (process.env.NODE_ENV === "development") {
-    console.log("LDC 退款请求:", url);
-  }
+  console.log("LDC 退款请求:", url, "参数:", Object.fromEntries(body));
 
-  const response = await fetch(url);
-  
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    },
+    body: body.toString(),
+  });
+
   // 检查响应内容类型
   const contentType = response.headers.get("content-type");
   const text = await response.text();
-  
-  if (process.env.NODE_ENV === "development") {
-    console.log("LDC 退款响应:", text);
-  }
-  
+
+  console.log("LDC 退款响应状态:", response.status, "类型:", contentType);
+  console.log("LDC 退款响应内容:", text.substring(0, 500));
+
   // 如果不是 JSON 响应，抛出友好错误
   if (!contentType?.includes("application/json")) {
-    console.error("退款接口返回非 JSON 响应:", text.substring(0, 200));
+    console.error("退款接口返回非 JSON 响应:", text.substring(0, 500));
+    
+    // 检查是否是 Cloudflare 拦截
+    if (text.includes("Just a moment") || text.includes("cloudflare")) {
+      throw new Error("支付平台被 Cloudflare 拦截，请联系支付平台获取 API 白名单");
+    }
+    
     throw new Error("支付平台返回格式异常，请检查退款接口配置");
   }
-  
+
   try {
     return JSON.parse(text);
   } catch {
-    console.error("退款接口 JSON 解析失败:", text.substring(0, 200));
+    console.error("退款接口 JSON 解析失败:", text.substring(0, 500));
     throw new Error("支付平台响应解析失败");
   }
 }
