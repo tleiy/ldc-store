@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,8 +20,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { MoreHorizontal, CheckCircle2, Eye, Copy, RotateCcw, XCircle, Loader2, Globe } from "lucide-react";
+import { MoreHorizontal, CheckCircle2, Eye, Copy, RotateCcw, XCircle, Loader2, Globe, Trash2 } from "lucide-react";
 import { adminCompleteOrder, approveRefund, rejectRefund } from "@/lib/actions/orders";
+import { deleteAdminOrders } from "@/lib/actions/admin-orders";
 import { toast } from "sonner";
 import type { RefundMode } from "@/lib/payment/ldc";
 
@@ -34,9 +36,11 @@ interface OrderActionsProps {
 }
 
 export function OrderActions({ orderId, orderNo, status, refundReason, refundEnabled = false, refundMode = 'disabled' }: OrderActionsProps) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
   const handleComplete = () => {
@@ -126,6 +130,20 @@ export function OrderActions({ orderId, orderNo, status, refundReason, refundEna
     toast.success("订单号已复制");
   };
 
+  const handleDelete = () => {
+    // 为什么这样做：删除后需要刷新 Server Component 的订单列表，避免页面仍展示已删除的数据
+    startTransition(async () => {
+      const result = await deleteAdminOrders([orderId]);
+      if (result.success) {
+        toast.success(result.message);
+        setDeleteDialogOpen(false);
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
+    });
+  };
+
   return (
     <>
       <DropdownMenu>
@@ -180,6 +198,14 @@ export function OrderActions({ orderId, orderNo, status, refundReason, refundEna
               </DropdownMenuItem>
             </>
           )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => setDeleteDialogOpen(true)}
+            className="text-red-600"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            删除订单
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -282,7 +308,35 @@ export function OrderActions({ orderId, orderNo, status, refundReason, refundEna
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 删除订单确认对话框 */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>确认删除订单</DialogTitle>
+            <DialogDescription>
+              将删除订单 <span className="font-mono">{orderNo}</span>。该操作不可恢复，请确认后继续。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={isPending}
+            >
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={isPending}
+            >
+              {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
-

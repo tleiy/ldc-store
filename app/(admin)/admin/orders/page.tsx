@@ -1,146 +1,166 @@
 export const dynamic = "force-dynamic";
 
-import { db } from "@/lib/db";
+import { redirect } from "next/navigation";
+
 import { isRefundEnabled, getRefundMode } from "@/lib/payment/ldc";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ShoppingCart, CheckCircle2, Clock, RotateCcw } from "lucide-react";
+
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ShoppingCart, Eye, CheckCircle2, Clock, RotateCcw } from "lucide-react";
-import { OrderActions } from "./order-actions";
-import { LocalTime } from "@/components/time/local-time";
+  getAdminOrdersPage,
+  type AdminOrdersFilters,
+} from "@/lib/actions/admin-orders";
+import {
+  orderStatusEnum,
+  paymentMethodEnum,
+  type OrderStatus,
+  type PaymentMethod,
+} from "@/lib/db";
 
-function toIsoString(value: unknown): string | null {
-  if (!value) return null;
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === "string") return value;
-  const date = new Date(value as string);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+import { OrdersClient } from "./orders-client";
+import {
+  buildAdminOrdersHref,
+  DEFAULT_ADMIN_ORDERS_PAGE_SIZE,
+} from "./orders-url";
+
+function normalizePage(value?: string): number {
+  return Math.max(1, Number.parseInt(value || "1", 10) || 1);
 }
 
-async function getOrders() {
-  return db.query.orders.findMany({
-    orderBy: (orders, { desc }) => [desc(orders.createdAt)],
-    limit: 100,
-    with: {
-      product: {
-        columns: {
-          name: true,
-        },
-      },
-    },
-  });
+function normalizePageSize(value?: string): number {
+  const parsed = Number.parseInt(
+    value || String(DEFAULT_ADMIN_ORDERS_PAGE_SIZE),
+    10
+  );
+  const safe = Number.isFinite(parsed) ? parsed : DEFAULT_ADMIN_ORDERS_PAGE_SIZE;
+  return Math.min(200, Math.max(1, safe));
 }
 
-const statusConfig: Record<string, { label: string; color: string }> = {
-  pending: {
-    label: "待支付",
-    color: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  },
-  paid: {
-    label: "已支付",
-    color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-  },
-  completed: {
-    label: "已完成",
-    color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
-  },
-  expired: {
-    label: "已过期",
-    color: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  },
-  refund_pending: {
-    label: "退款审核中",
-    color: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
-  },
-  refund_rejected: {
-    label: "退款已拒绝",
-    color: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  },
-  refunded: {
-    label: "已退款",
-    color: "bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-300",
-  },
-};
+function normalizeEnumValue<T extends readonly string[]>(
+  value: string | undefined,
+  allowed: T
+): T[number] | undefined {
+  if (!value) return undefined;
+  return allowed.includes(value) ? (value as T[number]) : undefined;
+}
 
-const paymentMethodLabels: Record<string, string> = {
-  ldc: "LDC 积分",
-  alipay: "支付宝",
-  wechat: "微信",
-  usdt: "USDT",
-};
+interface OrdersPageProps {
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    paymentMethod?: string;
+    page?: string;
+    pageSize?: string;
+  }>;
+}
 
-export default async function OrdersPage() {
-  const orders = await getOrders();
+export default async function OrdersPage({ searchParams }: OrdersPageProps) {
+  const params = await searchParams;
+
+  const q = (params.q || "").trim();
+  const status = normalizeEnumValue(
+    params.status,
+    orderStatusEnum.enumValues
+  ) as OrderStatus | undefined;
+  const paymentMethod = normalizeEnumValue(
+    params.paymentMethod,
+    paymentMethodEnum.enumValues
+  ) as PaymentMethod | undefined;
+
+  const page = normalizePage(params.page);
+  const pageSize = normalizePageSize(params.pageSize);
+
+  const filters: AdminOrdersFilters = {
+    status,
+    paymentMethod,
+    query: q || undefined,
+  };
+
+  const result = await getAdminOrdersPage({ page, pageSize, filters });
+  const totalPages = Math.max(1, Math.ceil(result.total / pageSize));
+  if (result.total > 0 && page > totalPages) {
+    redirect(
+      buildAdminOrdersHref({
+        q: q || undefined,
+        status,
+        paymentMethod,
+        page: totalPages,
+        pageSize,
+      })
+    );
+  }
+  const safePage = Math.min(page, totalPages);
+
   const refundEnabled = isRefundEnabled();
   const refundMode = getRefundMode();
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-          订单管理
-        </h1>
-        <p className="text-zinc-600 dark:text-zinc-400">
-          查看和管理所有订单
-        </p>
-      </div>
+      <div className="space-y-4">
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+            订单管理
+          </h1>
+          <p className="text-zinc-600 dark:text-zinc-400">
+            查看和管理所有订单
+          </p>
+        </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900">
-                <Clock className="h-5 w-5 text-amber-600" />
+        {/* Stats */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Card className="py-4">
+            <CardContent className="px-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-950/40">
+                  <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xl font-semibold leading-none text-zinc-900 dark:text-zinc-50">
+                    {result.stats.pending}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    待支付
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {orders.filter((o) => o.status === "pending").length}
-                </p>
-                <p className="text-sm text-zinc-500">待支付</p>
+            </CardContent>
+          </Card>
+          <Card className="py-4">
+            <CardContent className="px-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-950/40">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xl font-semibold leading-none text-zinc-900 dark:text-zinc-50">
+                    {result.stats.completed}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    已完成
+                  </p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+            </CardContent>
+          </Card>
+          <Card className="py-4">
+            <CardContent className="px-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-950/40">
+                  <RotateCcw className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xl font-semibold leading-none text-zinc-900 dark:text-zinc-50">
+                    {result.stats.refund_pending}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    待审核退款
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {orders.filter((o) => o.status === "completed").length}
-                </p>
-                <p className="text-sm text-zinc-500">已完成</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900">
-                <RotateCcw className="h-5 w-5 text-orange-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {orders.filter((o) => o.status === "refund_pending").length}
-                </p>
-                <p className="text-sm text-zinc-500">待审核退款</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Orders Table */}
@@ -148,84 +168,24 @@ export default async function OrdersPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ShoppingCart className="h-5 w-5" />
-            订单列表 ({orders.length})
+            订单列表 ({result.total})
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {orders.length > 0 ? (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>订单号</TableHead>
-                    <TableHead>商品</TableHead>
-                    <TableHead className="text-center">数量</TableHead>
-                    <TableHead className="text-right">金额</TableHead>
-                    <TableHead>支付方式</TableHead>
-                    <TableHead>联系邮箱</TableHead>
-                    <TableHead className="text-center">状态</TableHead>
-                    <TableHead>创建时间</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {orders.map((order) => {
-                    const status = statusConfig[order.status] || statusConfig.pending;
-                    return (
-                      <TableRow key={order.id}>
-                        <TableCell className="font-mono text-sm">
-                          {order.orderNo}
-                        </TableCell>
-                        <TableCell>
-                          <span className="max-w-[200px] truncate block">
-                            {order.productName}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {order.quantity}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {order.totalAmount} LDC
-                        </TableCell>
-                        <TableCell>
-                          {paymentMethodLabels[order.paymentMethod] || order.paymentMethod}
-                        </TableCell>
-                        <TableCell className="max-w-[150px] truncate">
-                          {order.email}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge className={status.color}>
-                            {status.label}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-zinc-500">
-                          <LocalTime value={toIsoString(order.createdAt)} mode="short" />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <OrderActions
-                            orderId={order.id}
-                            orderNo={order.orderNo}
-                            status={order.status}
-                            refundReason={order.refundReason}
-                            refundEnabled={refundEnabled}
-                            refundMode={refundMode}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="py-12 text-center">
-              <ShoppingCart className="mx-auto h-12 w-12 text-zinc-300" />
-              <p className="mt-4 text-zinc-500">暂无订单</p>
-            </div>
-          )}
+          <OrdersClient
+            items={result.items}
+            total={result.total}
+            page={safePage}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            q={q}
+            status={status}
+            paymentMethod={paymentMethod}
+            refundEnabled={refundEnabled}
+            refundMode={refundMode}
+          />
         </CardContent>
       </Card>
     </div>
   );
 }
-
