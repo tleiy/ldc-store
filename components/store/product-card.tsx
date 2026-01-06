@@ -68,8 +68,8 @@ export function ProductCard({
         {/* Badges overlay */}
         <div className="absolute left-3 top-3 flex flex-col gap-1.5">
           {isFeatured && (
-            <Badge className="border-border/40 bg-background/80 text-foreground shadow-sm backdrop-blur-sm gap-1">
-              <Flame className="h-3 w-3" />
+            <Badge className="border-0 bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 text-white shadow-lg shadow-orange-500/25 ring-1 ring-white/20 gap-1">
+              <Flame className="h-3 w-3 drop-shadow-sm" />
               热门
             </Badge>
           )}
