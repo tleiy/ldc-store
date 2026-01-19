@@ -35,6 +35,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -82,6 +83,7 @@ export function SystemConfigForm({ initialValues }: SystemConfigFormProps) {
   const watchedName = useWatch({ control: form.control, name: "siteName" });
   const watchedDescription = useWatch({ control: form.control, name: "siteDescription" });
   const watchedIcon = useWatch({ control: form.control, name: "siteIcon" });
+  const watchedPriority = useWatch({ control: form.control, name: "configPriority" });
 
   const PreviewIcon = useMemo(() => {
     // 为什么这样做：即便 DB 被写入非法 icon，也不要让页面崩；这里做一次兜底，确保始终有可渲染的 icon。
@@ -112,6 +114,61 @@ export function SystemConfigForm({ initialValues }: SystemConfigFormProps) {
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="space-y-6 lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Settings className="h-5 w-5" />
+                  配置来源优先级
+                </CardTitle>
+                <CardDescription>
+                  控制“环境变量 vs 数据库（系统配置）”的覆盖顺序
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="configPriority"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border bg-muted/40 p-4">
+                      <div className="space-y-1">
+                        <FormLabel className="text-sm">环境变量优先</FormLabel>
+                        <FormDescription>
+                          开启后：若对应环境变量已配置，将覆盖数据库配置；关闭则相反。
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value === "env_first"}
+                          onCheckedChange={(checked) =>
+                            field.onChange(checked ? "env_first" : "db_first")
+                          }
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <div className="text-xs text-muted-foreground">
+                  当前模式：
+                  <span className="ml-1 font-medium text-foreground">
+                    {watchedPriority === "env_first" ? "环境变量优先" : "数据库优先"}
+                  </span>
+                  。
+                  {watchedPriority === "env_first" ? (
+                    <span>
+                      如果你在 Vercel/服务器里配置了 <code>NEXT_PUBLIC_SITE_NAME</code>、
+                      <code>NEXT_PUBLIC_SITE_DESCRIPTION</code>、<code>ORDER_EXPIRE_MINUTES</code>，
+                      那么这里保存到数据库的值仅作为兜底（环境变量为空/非法时才会使用）。
+                    </span>
+                  ) : (
+                    <span>
+                      数据库中保存的站点名称/描述/订单过期时间会覆盖环境变量（只要 DB 值合法）。
+                    </span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -259,6 +316,59 @@ export function SystemConfigForm({ initialValues }: SystemConfigFormProps) {
           </div>
 
           <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Settings className="h-5 w-5" />
+                  配置来源优先级
+                </CardTitle>
+                <CardDescription>
+                  控制“环境变量 vs 数据库（系统配置）”的覆盖顺序
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="configPriority"
+                  render={({ field }) => (
+                    <FormItem className="flex items-start justify-between gap-4 rounded-lg border bg-muted/40 p-4">
+                      <div className="space-y-1">
+                        <FormLabel className="text-sm">环境变量优先</FormLabel>
+                        <FormDescription className="text-xs">
+                          开启后：若已设置对应环境变量（如 <code>NEXT_PUBLIC_SITE_NAME</code>），将覆盖数据库中的值；数据库仅作为兜底。
+                          关闭后：数据库优先，环境变量兜底（当前项目默认行为）。
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value === "env_first"}
+                          onCheckedChange={(checked) =>
+                            field.onChange(checked ? "env_first" : "db_first")
+                          }
+                          aria-label="环境变量优先"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <div className="rounded-lg border bg-muted/40 p-4 text-xs text-muted-foreground">
+                  <p className="font-medium text-foreground mb-1">当前模式</p>
+                  {watchedPriority === "env_first" ? (
+                    <ul className="list-disc pl-4 space-y-1">
+                      <li>环境变量优先生效（推荐用于 Vercel：配置跟随项目环境变量）。</li>
+                      <li>修改环境变量通常需要重新部署后生效；数据库配置仍可作为兜底。</li>
+                    </ul>
+                  ) : (
+                    <ul className="list-disc pl-4 space-y-1">
+                      <li>数据库优先生效（热更新体验更好）。</li>
+                      <li>环境变量仅在数据库未配置/无效时才会兜底生效。</li>
+                    </ul>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
