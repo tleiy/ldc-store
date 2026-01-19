@@ -117,12 +117,147 @@ export function SystemConfigForm({ initialValues }: SystemConfigFormProps) {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
+                  <Globe className="h-5 w-5" />
+                  站点信息
+                </CardTitle>
+                <CardDescription>
+                  这些配置会影响前台 Header/页面标题等展示（保存后立即生效）
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="siteName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>网站名称 *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="例如：LDC Store" {...field} />
+                      </FormControl>
+                      <FormDescription>用于前台标题、Footer 版权等。</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="siteDescription"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>网站描述</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="一句话介绍（可选）" rows={3} {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        建议控制在 1-2 句话，过长会影响 SEO 与分享卡片展示。
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="siteIcon"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>网站图标</FormLabel>
+                        <Select
+                          value={field.value}
+                          onValueChange={(value) => field.onChange(value as SiteIconOption)}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="选择图标" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {SITE_ICON_OPTIONS.map((value) => {
+                              const Icon = SITE_ICON_MAP[value];
+                              return (
+                                <SelectItem key={value} value={value}>
+                                  <div className="flex items-center gap-2">
+                                    <Icon className="h-4 w-4" />
+                                    <span>{value}</span>
+                                  </div>
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="rounded-lg border bg-muted/40 p-4">
+                    <p className="text-sm text-muted-foreground">预览</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="inline-flex size-9 items-center justify-center rounded-md bg-primary/10 text-primary ring-1 ring-border/50">
+                        <PreviewIcon className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{watchedName || "—"}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {watchedDescription || "未填写描述"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Clock className="h-5 w-5" />
+                  订单与超时
+                </CardTitle>
+                <CardDescription>用于控制“未支付订单”多久后过期并释放库存</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="orderExpireMinutes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>订单过期时间（分钟）*</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={1440}
+                          {...field}
+                          onChange={(e) => {
+                            const next = Number.parseInt(e.target.value, 10);
+                            // 为什么这样做：Input 的值是 string；这里提前转为 number，避免服务端校验失败。
+                            field.onChange(Number.isFinite(next) ? next : 0);
+                          }}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        保存后会影响新创建的订单；已创建订单仍按其自身的过期时间计算。
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
                   <Settings className="h-5 w-5" />
                   配置来源优先级
                 </CardTitle>
-                <CardDescription>
-                  控制“环境变量 vs 数据库（系统配置）”的覆盖顺序
-                </CardDescription>
+                <CardDescription>控制“环境变量 vs 数据库（系统配置）”的覆盖顺序</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <FormField
@@ -172,212 +307,10 @@ export function SystemConfigForm({ initialValues }: SystemConfigFormProps) {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <Globe className="h-5 w-5" />
-                  站点信息
-                </CardTitle>
-                <CardDescription>
-                  这些配置会影响前台 Header/页面标题等展示（保存后立即生效）
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="siteName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>网站名称 *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="例如：LDC Store" {...field} />
-                      </FormControl>
-                      <FormDescription>用于前台标题、Footer 版权等。</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="siteDescription"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>网站描述</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="一句话介绍（可选）"
-                          rows={3}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        建议控制在 1-2 句话，过长会影响 SEO 与分享卡片展示。
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="siteIcon"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>网站图标</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={(value) =>
-                            field.onChange(value as SiteIconOption)
-                          }
-                        >
-                          <FormControl>
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="选择图标" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {SITE_ICON_OPTIONS.map((value) => {
-                              const Icon = SITE_ICON_MAP[value];
-                              return (
-                                <SelectItem key={value} value={value}>
-                                  <div className="flex items-center gap-2">
-                                    <Icon className="h-4 w-4" />
-                                    <span>{value}</span>
-                                  </div>
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <div className="rounded-lg border bg-muted/40 p-4">
-                    <p className="text-sm text-muted-foreground">预览</p>
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className="inline-flex size-9 items-center justify-center rounded-md bg-primary/10 text-primary ring-1 ring-border/50">
-                        <PreviewIcon className="h-4 w-4" />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                          {watchedName || "—"}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {watchedDescription || "未填写描述"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Clock className="h-5 w-5" />
-                  订单与超时
-                </CardTitle>
-                <CardDescription>
-                  用于控制“未支付订单”多久后过期并释放库存
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="orderExpireMinutes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>订单过期时间（分钟）*</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          inputMode="numeric"
-                          min={1}
-                          max={1440}
-                          {...field}
-                          onChange={(e) => {
-                            const next = Number.parseInt(e.target.value, 10);
-                            // 为什么这样做：Input 的值是 string；这里提前转为 number，避免服务端校验失败。
-                            field.onChange(Number.isFinite(next) ? next : 0);
-                          }}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        保存后会影响新创建的订单；已创建订单仍按其自身的过期时间计算。
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Settings className="h-5 w-5" />
-                  配置来源优先级
-                </CardTitle>
-                <CardDescription>
-                  控制“环境变量 vs 数据库（系统配置）”的覆盖顺序
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="configPriority"
-                  render={({ field }) => (
-                    <FormItem className="flex items-start justify-between gap-4 rounded-lg border bg-muted/40 p-4">
-                      <div className="space-y-1">
-                        <FormLabel className="text-sm">环境变量优先</FormLabel>
-                        <FormDescription className="text-xs">
-                          开启后：若已设置对应环境变量（如 <code>NEXT_PUBLIC_SITE_NAME</code>），将覆盖数据库中的值；数据库仅作为兜底。
-                          关闭后：数据库优先，环境变量兜底（当前项目默认行为）。
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={field.value === "env_first"}
-                          onCheckedChange={(checked) =>
-                            field.onChange(checked ? "env_first" : "db_first")
-                          }
-                          aria-label="环境变量优先"
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
-                <div className="rounded-lg border bg-muted/40 p-4 text-xs text-muted-foreground">
-                  <p className="font-medium text-foreground mb-1">当前模式</p>
-                  {watchedPriority === "env_first" ? (
-                    <ul className="list-disc pl-4 space-y-1">
-                      <li>环境变量优先生效（推荐用于 Vercel：配置跟随项目环境变量）。</li>
-                      <li>修改环境变量通常需要重新部署后生效；数据库配置仍可作为兜底。</li>
-                    </ul>
-                  ) : (
-                    <ul className="list-disc pl-4 space-y-1">
-                      <li>数据库优先生效（热更新体验更好）。</li>
-                      <li>环境变量仅在数据库未配置/无效时才会兜底生效。</li>
-                    </ul>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
                   <Settings className="h-5 w-5" />
                   生效说明
                 </CardTitle>
-                <CardDescription>
-                  配置会写入数据库，保存后立即生效
-                </CardDescription>
+                <CardDescription>配置会写入数据库，保存后立即生效</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <ul className="space-y-2 text-sm text-muted-foreground">
