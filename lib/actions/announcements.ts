@@ -7,6 +7,7 @@ import {
   desc,
   eq,
   gte,
+  inArray,
   isNull,
   lte,
   or,
@@ -20,6 +21,44 @@ import {
   type UpdateAnnouncementInput,
 } from "@/lib/validations/announcement";
 import { revalidateAnnouncementCache } from "@/lib/cache";
+
+/**
+ * 多站点公告分流
+ * - 每个 Vercel 项目设置不同的 LDC_SITE_KEY
+ * - 公告按 site_key 存储：当前站点 + global（全站公告）
+ *
+ * 约定：
+ * - global：全站公告（所有站点都会展示/可管理）
+ * - 其它：站点私有公告（只在对应站点展示/可管理）
+ */
+const GLOBAL_SITE_KEY = "global";
+const DEFAULT_SITE_KEY = "default";
+
+function getCurrentSiteKey(): string {
+  const raw = process.env.LDC_SITE_KEY;
+  const v = (raw ?? "").trim();
+  // 防止意外空值导致“查不到公告”
+  return v.length > 0 ? v : DEFAULT_SITE_KEY;
+}
+
+function allowedSiteKeysForThisDeployment(): [string, string] {
+  return [getCurrentSiteKey(), GLOBAL_SITE_KEY];
+}
+
+/**
+ * scope 用于管理端筛选范围
+ * - all: 当前站点 + global（默认）
+ * - site: 仅当前站点
+ * - global: 仅全站公告
+ */
+export type AnnouncementScope = "all" | "site" | "global";
+
+function scopeToKeys(scope: AnnouncementScope): string[] {
+  const siteKey = getCurrentSiteKey();
+  if (scope === "site") return [siteKey];
+  if (scope === "global") return [GLOBAL_SITE_KEY];
+  return [siteKey, GLOBAL_SITE_KEY];
+}
 
 const SITE_TIMEZONE = process.env.STATS_TIMEZONE || "Asia/Shanghai";
 
@@ -66,7 +105,9 @@ function parseDateTimeLocal(value: string): Date | null {
 
   // datetime-local 不含时区，浏览器通常按“用户本地时区”理解；
   // 服务端处理时应显式按站点时区解释，避免部署在 UTC 等环境导致定时偏移。
-  const guess = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm), 0));
+  const guess = new Date(
+    Date.UTC(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm), 0)
+  );
 
   try {
     const offset1 = getTimeZoneOffsetMs(guess, SITE_TIMEZONE);
@@ -82,14 +123,20 @@ function parseDateTimeLocal(value: string): Date | null {
 
 /**
  * 获取当前有效公告（前台）
+ * 默认返回：当前站点 + global
  * - isActive=true
  * - startAt/endAt 为空表示不限制
  */
-export async function getActiveAnnouncements() {
+export async function getActiveAnnouncements(options?: { includeGlobal?: boolean }) {
   const now = new Date();
+
+  const siteKey = getCurrentSiteKey();
+  const keys =
+    options?.includeGlobal === false ? [siteKey] : ([siteKey, GLOBAL_SITE_KEY] as const);
 
   return db.query.announcements.findMany({
     where: and(
+      inArray(announcements.siteKey, keys),
       eq(announcements.isActive, true),
       or(isNull(announcements.startAt), lte(announcements.startAt, now))!,
       or(isNull(announcements.endAt), gte(announcements.endAt, now))!
@@ -100,11 +147,14 @@ export async function getActiveAnnouncements() {
 
 /**
  * 获取所有公告（管理后台）
+ * 默认 scope=all：当前站点 + global
+ * 这样多站共库时：A 看不到 B 的站点公告，但仍能看到全站公告。
  */
 export async function getAllAnnouncements(options?: {
   limit?: number;
   offset?: number;
   status?: "all" | "active" | "inactive";
+  scope?: AnnouncementScope;
 }) {
   try {
     await requireAdmin();
@@ -112,12 +162,14 @@ export async function getAllAnnouncements(options?: {
     return { items: [], total: 0 };
   }
 
-  const { limit = 50, offset = 0, status = "all" } = options || {};
+  const { limit = 50, offset = 0, status = "all", scope = "all" } = options || {};
 
-  const conditions =
-    status === "all"
-      ? undefined
-      : eq(announcements.isActive, status === "active");
+  const keys = scopeToKeys(scope);
+
+  const conditions = and(
+    inArray(announcements.siteKey, keys),
+    status === "all" ? undefined : eq(announcements.isActive, status === "active")
+  );
 
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -136,6 +188,7 @@ export async function getAllAnnouncements(options?: {
 
 /**
  * 获取公告详情（管理后台）
+ * 仅允许读取：当前站点 + global
  */
 export async function getAnnouncementById(id: string) {
   try {
@@ -144,15 +197,24 @@ export async function getAnnouncementById(id: string) {
     return null;
   }
 
+  const keys = allowedSiteKeysForThisDeployment();
+
   return db.query.announcements.findFirst({
-    where: eq(announcements.id, id),
+    where: and(eq(announcements.id, id), inArray(announcements.siteKey, keys)),
   });
 }
 
 /**
  * 创建公告
+ * - 默认创建到当前站点
+ * - 支持创建全站公告：scope="global"
+ *
+ * 注意：为了不影响现有调用方，scope 通过第二个可选参数传入（不改原 input schema）
  */
-export async function createAnnouncement(input: CreateAnnouncementInput) {
+export async function createAnnouncement(
+  input: CreateAnnouncementInput,
+  options?: { scope?: "site" | "global" }
+) {
   try {
     await requireAdmin();
   } catch {
@@ -167,10 +229,14 @@ export async function createAnnouncement(input: CreateAnnouncementInput) {
   const startAt = parseDateTimeLocal(validationResult.data.startAt);
   const endAt = parseDateTimeLocal(validationResult.data.endAt);
 
+  const siteKey =
+    options?.scope === "global" ? GLOBAL_SITE_KEY : getCurrentSiteKey();
+
   try {
     const [created] = await db
       .insert(announcements)
       .values({
+        siteKey,
         title: validationResult.data.title,
         content: validationResult.data.content,
         isActive: validationResult.data.isActive,
@@ -191,8 +257,15 @@ export async function createAnnouncement(input: CreateAnnouncementInput) {
 
 /**
  * 更新公告
+ * 仅允许更新：当前站点 + global
+ *
+ * 注意：不允许跨站更新别的站点公告；也不在这里改变 siteKey（避免误操作）
+ * 若你后续要支持“把公告切换为 global/site”，可以在调用 update 时带 options 并显式 set siteKey。
  */
-export async function updateAnnouncement(id: string, input: UpdateAnnouncementInput) {
+export async function updateAnnouncement(
+  id: string,
+  input: UpdateAnnouncementInput
+) {
   try {
     await requireAdmin();
   } catch {
@@ -207,6 +280,8 @@ export async function updateAnnouncement(id: string, input: UpdateAnnouncementIn
   const startAt = parseDateTimeLocal(validationResult.data.startAt);
   const endAt = parseDateTimeLocal(validationResult.data.endAt);
 
+  const keys = allowedSiteKeysForThisDeployment();
+
   try {
     const [updated] = await db
       .update(announcements)
@@ -219,11 +294,11 @@ export async function updateAnnouncement(id: string, input: UpdateAnnouncementIn
         endAt,
         updatedAt: new Date(),
       })
-      .where(eq(announcements.id, id))
+      .where(and(eq(announcements.id, id), inArray(announcements.siteKey, keys)))
       .returning();
 
     if (!updated) {
-      return { success: false, message: "公告不存在" };
+      return { success: false, message: "公告不存在或无权限" };
     }
 
     await revalidateAnnouncementCache();
@@ -237,6 +312,7 @@ export async function updateAnnouncement(id: string, input: UpdateAnnouncementIn
 
 /**
  * 删除公告
+ * 仅允许删除：当前站点 + global
  */
 export async function deleteAnnouncement(id: string) {
   try {
@@ -245,8 +321,13 @@ export async function deleteAnnouncement(id: string) {
     return { success: false, message: "需要管理员权限" };
   }
 
+  const keys = allowedSiteKeysForThisDeployment();
+
   try {
-    await db.delete(announcements).where(eq(announcements.id, id));
+    await db
+      .delete(announcements)
+      .where(and(eq(announcements.id, id), inArray(announcements.siteKey, keys)));
+
     await revalidateAnnouncementCache();
     return { success: true, message: "公告已删除" };
   } catch (error) {
@@ -257,6 +338,7 @@ export async function deleteAnnouncement(id: string) {
 
 /**
  * 切换公告状态（启用/停用）
+ * 仅允许操作：当前站点 + global
  */
 export async function toggleAnnouncementStatus(id: string) {
   try {
@@ -265,19 +347,21 @@ export async function toggleAnnouncementStatus(id: string) {
     return { success: false, message: "需要管理员权限" };
   }
 
+  const keys = allowedSiteKeysForThisDeployment();
+
   try {
     const announcement = await db.query.announcements.findFirst({
-      where: eq(announcements.id, id),
+      where: and(eq(announcements.id, id), inArray(announcements.siteKey, keys)),
     });
 
     if (!announcement) {
-      return { success: false, message: "公告不存在" };
+      return { success: false, message: "公告不存在或无权限" };
     }
 
     await db
       .update(announcements)
       .set({ isActive: !announcement.isActive, updatedAt: new Date() })
-      .where(eq(announcements.id, id));
+      .where(and(eq(announcements.id, id), inArray(announcements.siteKey, keys)));
 
     await revalidateAnnouncementCache();
 
