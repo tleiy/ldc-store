@@ -178,6 +178,7 @@ export const settings = pgTable("settings", {
 
 export const announcements = pgTable("announcements", {
   id: uuid("id").primaryKey().defaultRandom(),
+  siteKey: text("site_key").notNull().default("default"), // ✅ 新增：站点维度（支持 global / 多站点分流）
   title: text("title").notNull(),
   content: text("content").notNull(),
   isActive: boolean("is_active").default(true).notNull(),
@@ -187,6 +188,7 @@ export const announcements = pgTable("announcements", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
 
 // ============================================
 // Restock Requests Table (催补货请求)
