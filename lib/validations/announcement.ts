@@ -12,6 +12,11 @@ const dateTimeLocalSchema = z
 
 export const announcementSchema = z
   .object({
+    // 公告归属站点（用于多站点共库分流）
+    // - primary: 主站点
+    // - backup: 备用站点
+    // - global: 所有站点（全站公告）
+    siteKey: z.enum(["primary", "backup", "global"]).default("primary"),
     title: z.string().min(1, "标题不能为空").max(100, "标题最多100字符"),
     content: z.string().min(1, "内容不能为空").max(10000, "内容最多10000字符"),
     isActive: z.boolean().default(true),
@@ -45,4 +50,3 @@ export type AnnouncementInput = z.input<typeof announcementSchema>;
 export type AnnouncementOutput = z.infer<typeof announcementSchema>;
 export type CreateAnnouncementInput = z.input<typeof createAnnouncementSchema>;
 export type UpdateAnnouncementInput = z.input<typeof updateAnnouncementSchema>;
-
