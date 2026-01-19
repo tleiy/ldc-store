@@ -15,6 +15,10 @@ export const SITE_ICON_OPTIONS = [
 export type SiteIconOption = (typeof SITE_ICON_OPTIONS)[number];
 
 export const systemSettingsSchema = z.object({
+  // 配置来源优先级：决定“DB vs 环境变量”的覆盖顺序
+  // - db_first: 现有行为（DB 优先，环境变量兜底）
+  // - env_first: 环境变量优先，DB 兜底
+  configPriority: z.enum(["db_first", "env_first"]).default("db_first"),
   siteName: z
     .string()
     .trim()
