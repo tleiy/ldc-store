@@ -3,22 +3,29 @@
 import { db, settings } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth-utils";
 import { revalidateAllStoreCache } from "@/lib/cache";
-import { getOrderExpireMinutes } from "@/lib/order-config";
+import { DEFAULT_ORDER_EXPIRE_MINUTES } from "@/lib/order-config";
 import { systemSettingsSchema, type SystemSettings, type SystemSettingsInput } from "@/lib/validations/system-settings";
 import { inArray, sql } from "drizzle-orm";
 
 const SYSTEM_SETTING_KEYS = {
+  configPriority: "config.priority",
   siteName: "site.name",
   siteDescription: "site.description",
   siteIcon: "site.icon",
   orderExpireMinutes: "order.expire_minutes",
 } as const;
 
+function parseIntOrUndefined(value: string | null | undefined): number | undefined {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 export async function getSystemSettings(): Promise<SystemSettings> {
-  const envSiteName = process.env.NEXT_PUBLIC_SITE_NAME || "LDC Store";
-  const envSiteDescription =
-    process.env.NEXT_PUBLIC_SITE_DESCRIPTION ||
-    "基于 Linux DO Credit 的虚拟商品自动发卡平台";
+  const DEFAULT_SITE_NAME = "LDC Store";
+  const DEFAULT_SITE_DESCRIPTION = "基于 Linux DO Credit 的虚拟商品自动发卡平台";
+
+  const envSiteName = process.env.NEXT_PUBLIC_SITE_NAME;
+  const envSiteDescription = process.env.NEXT_PUBLIC_SITE_DESCRIPTION;
 
   const keys = Object.values(SYSTEM_SETTING_KEYS);
   const rows = await db
@@ -28,18 +35,36 @@ export async function getSystemSettings(): Promise<SystemSettings> {
 
   const map = new Map<string, string | null>(rows.map((row) => [row.key, row.value]));
 
-  const rawExpireMinutes = map.get(SYSTEM_SETTING_KEYS.orderExpireMinutes);
-  const parsedExpireMinutes = Number.parseInt(String(rawExpireMinutes ?? ""), 10);
-  const expireMinutes = Number.isFinite(parsedExpireMinutes)
-    ? parsedExpireMinutes
-    : getOrderExpireMinutes();
+  const rawPriority = map.get(SYSTEM_SETTING_KEYS.configPriority);
+  const configPriority = rawPriority === "env_first" ? "env_first" : "db_first";
+
+  // 订单过期时间：根据优先级决定 DB vs env 的覆盖顺序
+  const envExpireMinutes = parseIntOrUndefined(process.env.ORDER_EXPIRE_MINUTES);
+  const dbExpireMinutes = parseIntOrUndefined(map.get(SYSTEM_SETTING_KEYS.orderExpireMinutes));
+  const expireMinutes =
+    configPriority === "env_first"
+      ? (envExpireMinutes ?? dbExpireMinutes ?? DEFAULT_ORDER_EXPIRE_MINUTES)
+      : (dbExpireMinutes ?? envExpireMinutes ?? DEFAULT_ORDER_EXPIRE_MINUTES);
+
+  const dbSiteName = map.get(SYSTEM_SETTING_KEYS.siteName) ?? undefined;
+  const dbSiteDescription = map.get(SYSTEM_SETTING_KEYS.siteDescription) ?? undefined;
+  const dbSiteIcon = map.get(SYSTEM_SETTING_KEYS.siteIcon) ?? undefined;
+
+  const resolvedSiteName =
+    configPriority === "env_first"
+      ? (envSiteName ?? dbSiteName ?? DEFAULT_SITE_NAME)
+      : (dbSiteName ?? envSiteName ?? DEFAULT_SITE_NAME);
+
+  const resolvedSiteDescription =
+    configPriority === "env_first"
+      ? (envSiteDescription ?? dbSiteDescription ?? DEFAULT_SITE_DESCRIPTION)
+      : (dbSiteDescription ?? envSiteDescription ?? DEFAULT_SITE_DESCRIPTION);
 
   const candidate = {
-    siteName: (map.get(SYSTEM_SETTING_KEYS.siteName) ?? envSiteName) || envSiteName,
-    siteDescription:
-      (map.get(SYSTEM_SETTING_KEYS.siteDescription) ?? envSiteDescription) ||
-      envSiteDescription,
-    siteIcon: map.get(SYSTEM_SETTING_KEYS.siteIcon) ?? "Store",
+    configPriority,
+    siteName: resolvedSiteName,
+    siteDescription: resolvedSiteDescription,
+    siteIcon: dbSiteIcon ?? "Store",
     orderExpireMinutes: expireMinutes,
   };
 
@@ -51,10 +76,11 @@ export async function getSystemSettings(): Promise<SystemSettings> {
 
   console.warn("系统配置存在非法值，已回退到默认配置:", parsed.error.issues);
   return {
-    siteName: envSiteName,
-    siteDescription: envSiteDescription,
+    configPriority,
+    siteName: envSiteName ?? DEFAULT_SITE_NAME,
+    siteDescription: envSiteDescription ?? DEFAULT_SITE_DESCRIPTION,
     siteIcon: "Store",
-    orderExpireMinutes: getOrderExpireMinutes(),
+    orderExpireMinutes: DEFAULT_ORDER_EXPIRE_MINUTES,
   };
 }
 
@@ -77,7 +103,7 @@ export async function updateSystemSettings(input: SystemSettingsInput): Promise<
   }
 
   const now = new Date();
-  const { siteName, siteDescription, siteIcon, orderExpireMinutes } =
+  const { configPriority, siteName, siteDescription, siteIcon, orderExpireMinutes } =
     validationResult.data;
 
   try {
@@ -85,6 +111,12 @@ export async function updateSystemSettings(input: SystemSettingsInput): Promise<
     await db
       .insert(settings)
       .values([
+        {
+          key: SYSTEM_SETTING_KEYS.configPriority,
+          value: configPriority,
+          description: "配置来源优先级（db_first/env_first）",
+          updatedAt: now,
+        },
         {
           key: SYSTEM_SETTING_KEYS.siteName,
           value: siteName,
