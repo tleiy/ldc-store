@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "pnpm tsx scripts/generate-favicon.ts branding/icon.png",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
