@@ -79,25 +79,33 @@ export function AnnouncementForm({
     const id = announcementId;
 
     async function loadAnnouncement() {
-      const announcement = await getAnnouncementById(id);
-      if (!announcement) {
-        toast.error("公告不存在或无权限访问");
-        router.push("/admin/announcements");
-        return;
-      }
+  const announcement = await getAnnouncementById(id);
+  if (!announcement) {
+    toast.error("公告不存在或无权限访问");
+    router.push("/admin/announcements");
+    return;
+  }
 
-      form.reset({
-        siteKey: announcement.siteKey === "default" ? "primary" : announcement.siteKey,
-        title: announcement.title,
-        content: announcement.content,
-        isActive: announcement.isActive,
-        sortOrder: announcement.sortOrder,
-        startAt: toDateTimeLocalValue(announcement.startAt),
-        endAt: toDateTimeLocalValue(announcement.endAt),
-      });
+  const mappedSiteKey =
+    announcement.siteKey === "backup"
+      ? "backup"
+      : announcement.siteKey === "global"
+        ? "global"
+        : "primary"; // 其它任何值（含 default）都回退 primary
 
-      setIsLoading(false);
-    }
+  form.reset({
+    siteKey: mappedSiteKey,
+    title: announcement.title,
+    content: announcement.content,
+    isActive: announcement.isActive,
+    sortOrder: announcement.sortOrder,
+    startAt: toDateTimeLocalValue(announcement.startAt),
+    endAt: toDateTimeLocalValue(announcement.endAt),
+  });
+
+  setIsLoading(false);
+}
+
 
     loadAnnouncement();
   }, [announcementId, form, router]);
