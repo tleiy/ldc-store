@@ -144,37 +144,51 @@ export default async function SystemStatusPage() {
               站点配置
             </CardTitle>
             <CardDescription>
-              系统配置（DB）优先，环境变量作为兜底；敏感配置仍需通过环境变量修改并重启
+              {dbSettings?.configPriority === "env_first"
+                ? "环境变量优先，系统配置（DB）兜底；敏感配置仍需通过环境变量修改并重启"
+                : "系统配置（DB）优先，环境变量兜底；敏感配置仍需通过环境变量修改并重启"}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">网站名称</p>
-                <p className="font-medium">{dbSettings?.siteName || siteName}</p>
+                <p className="font-medium">{dbSettings?.siteName ?? siteName}</p>
                 <p className="text-xs text-muted-foreground">
                   {dbSettings ? (
-                    <>
-                      系统配置（DB）已生效；环境变量兜底: <code>NEXT_PUBLIC_SITE_NAME</code>
-                    </>
+                    dbSettings.configPriority === "env_first" ? (
+                      <>
+                        当前为<strong>环境变量优先</strong>；环境变量覆盖 DB：<code>NEXT_PUBLIC_SITE_NAME</code>
+                      </>
+                    ) : (
+                      <>
+                        当前为<strong>数据库优先</strong>；环境变量兜底：<code>NEXT_PUBLIC_SITE_NAME</code>
+                      </>
+                    )
                   ) : (
                     <>
-                      环境变量: <code>NEXT_PUBLIC_SITE_NAME</code>
+                      环境变量：<code>NEXT_PUBLIC_SITE_NAME</code>
                     </>
                   )}
                 </p>
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">网站描述</p>
-                <p className="font-medium">{dbSettings?.siteDescription || siteDescription}</p>
+                <p className="font-medium">{dbSettings?.siteDescription ?? siteDescription}</p>
                 <p className="text-xs text-muted-foreground">
                   {dbSettings ? (
-                    <>
-                      系统配置（DB）已生效；环境变量兜底: <code>NEXT_PUBLIC_SITE_DESCRIPTION</code>
-                    </>
+                    dbSettings.configPriority === "env_first" ? (
+                      <>
+                        当前为<strong>环境变量优先</strong>；环境变量覆盖 DB：<code>NEXT_PUBLIC_SITE_DESCRIPTION</code>
+                      </>
+                    ) : (
+                      <>
+                        当前为<strong>数据库优先</strong>；环境变量兜底：<code>NEXT_PUBLIC_SITE_DESCRIPTION</code>
+                      </>
+                    )
                   ) : (
                     <>
-                      环境变量: <code>NEXT_PUBLIC_SITE_DESCRIPTION</code>
+                      环境变量：<code>NEXT_PUBLIC_SITE_DESCRIPTION</code>
                     </>
                   )}
                 </p>
