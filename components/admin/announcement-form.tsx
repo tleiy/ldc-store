@@ -24,6 +24,13 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import {
   createAnnouncement,
@@ -41,7 +48,13 @@ function toDateTimeLocalValue(date?: Date | null): string {
   return format(date, "yyyy-MM-dd'T'HH:mm");
 }
 
-export function AnnouncementForm({ announcementId }: { announcementId?: string }) {
+export function AnnouncementForm({
+  announcementId,
+  defaultSiteKey,
+}: {
+  announcementId?: string;
+  defaultSiteKey?: "primary" | "backup" | "global";
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isLoading, setIsLoading] = useState(Boolean(announcementId));
@@ -49,6 +62,7 @@ export function AnnouncementForm({ announcementId }: { announcementId?: string }
   const form = useForm<AnnouncementInput>({
     resolver: zodResolver(announcementSchema),
     defaultValues: {
+      siteKey: defaultSiteKey ?? "primary",
       title: "",
       content: "",
       isActive: true,
@@ -73,6 +87,7 @@ export function AnnouncementForm({ announcementId }: { announcementId?: string }
       }
 
       form.reset({
+        siteKey: announcement.siteKey === "default" ? "primary" : announcement.siteKey,
         title: announcement.title,
         content: announcement.content,
         isActive: announcement.isActive,
@@ -193,6 +208,32 @@ export function AnnouncementForm({ announcementId }: { announcementId?: string }
                 <CardContent className="space-y-4">
                   <FormField
                     control={form.control}
+                    name="siteKey"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>范围</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="选择公告范围" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="primary">主站</SelectItem>
+                            <SelectItem value="backup">备用站</SelectItem>
+                            <SelectItem value="global">所有站</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          选择公告展示范围：主站/备用站分别对应站点环境变量 LDC_SITE_KEY=primary/backup；所有站为全站公告。
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name="isActive"
                     render={({ field }) => (
                       <FormItem className="flex items-center justify-between rounded-lg border p-3">
@@ -227,9 +268,7 @@ export function AnnouncementForm({ announcementId }: { announcementId?: string }
                             }
                           />
                         </FormControl>
-                        <FormDescription>
-                          数字越小越靠前
-                        </FormDescription>
+                        <FormDescription>数字越小越靠前</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
