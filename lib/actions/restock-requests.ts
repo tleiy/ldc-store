@@ -1,9 +1,10 @@
 "use server";
 
+import { desc, inArray, lte, sql } from "drizzle-orm";
+
 import { auth } from "@/lib/auth";
 import { revalidateAllStoreCache } from "@/lib/cache";
 import { db, restockRequests } from "@/lib/db";
-import { desc, inArray, lte, sql } from "drizzle-orm";
 
 export interface RestockRequester {
   userId: string;
@@ -18,6 +19,14 @@ export interface RestockSummary {
 
 const DEFAULT_MAX_REQUESTERS = 5;
 
+// 说明：产品 ID 在本项目中是 UUID；构建期/预渲染时若传入了非 UUID 值，会导致 Postgres 的 uuid 解析报错。
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
 function normalizeIds(ids: string[]): string[] {
   return Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
 }
@@ -30,7 +39,9 @@ export async function getRestockSummaryForProducts(input: {
   productIds: string[];
   maxRequesters?: number;
 }): Promise<Record<string, RestockSummary>> {
-  const productIds = normalizeIds(input.productIds);
+  const debug = process.env.DEBUG_RESTOCK === "1";
+
+  const productIds = normalizeIds(input.productIds).filter(isUuid);
   const maxRequesters = Math.max(1, input.maxRequesters ?? DEFAULT_MAX_REQUESTERS);
 
   if (productIds.length === 0) {
@@ -101,8 +112,11 @@ export async function getRestockSummaryForProducts(input: {
 
     return result;
   } catch (error) {
-    // 兜底：避免因为统计表缺失/权限问题导致前台页面不可用
-    console.error("[getRestockSummaryForProducts] 查询催补货统计失败:", error);
+    // 兜底：避免因为统计表缺失/权限问题导致前台页面不可用。
+    // 说明：该函数可能在构建期/预渲染阶段触发；为了避免 Vercel Build Logs 被刷屏，默认不打印错误。
+    if (debug) {
+      console.error("[getRestockSummaryForProducts] 查询催补货统计失败:", error);
+    }
     return {};
   }
 }
@@ -128,7 +142,7 @@ export async function requestRestock(productId: string): Promise<RequestRestockR
   }
 
   const safeProductId = productId.trim();
-  if (!safeProductId) {
+  if (!safeProductId || !isUuid(safeProductId)) {
     return { success: false, message: "商品信息无效" };
   }
 
