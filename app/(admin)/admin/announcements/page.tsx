@@ -18,6 +18,19 @@ import {
 } from "@/components/ui/table";
 import { AnnouncementActions } from "./announcement-actions";
 
+function siteKeyLabel(siteKey?: string | null): string {
+  switch (siteKey) {
+    case "primary":
+      return "主站";
+    case "backup":
+      return "备用站";
+    case "global":
+      return "所有站";
+    default:
+      return siteKey ? siteKey : "-";
+  }
+}
+
 function formatTimeRange(startAt?: Date | null, endAt?: Date | null): string {
   if (!startAt && !endAt) return "长期";
   const start = startAt ? format(startAt, "yyyy-MM-dd HH:mm") : "立即";
@@ -62,6 +75,7 @@ export default async function AnnouncementsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>标题</TableHead>
+                    <TableHead className="text-center">范围</TableHead>
                     <TableHead className="text-center">状态</TableHead>
                     <TableHead>生效时间</TableHead>
                     <TableHead className="text-center">排序</TableHead>
@@ -80,6 +94,9 @@ export default async function AnnouncementsPage() {
                             {item.content}
                           </p>
                         </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline">{siteKeyLabel(item.siteKey)}</Badge>
                       </TableCell>
                       <TableCell className="text-center">
                         {item.isActive ? (
@@ -128,4 +145,3 @@ export default async function AnnouncementsPage() {
     </div>
   );
 }
-
