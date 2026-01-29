@@ -1,10 +1,9 @@
 "use server";
 
-import { desc, inArray, lte, sql } from "drizzle-orm";
-
 import { auth } from "@/lib/auth";
 import { revalidateAllStoreCache } from "@/lib/cache";
 import { db, restockRequests } from "@/lib/db";
+import { desc, inArray, lte, sql } from "drizzle-orm";
 
 export interface RestockRequester {
   userId: string;
@@ -19,14 +18,6 @@ export interface RestockSummary {
 
 const DEFAULT_MAX_REQUESTERS = 5;
 
-// 说明：产品 ID 在本项目中是 UUID；构建期/预渲染时若传入了非 UUID 值，会导致 Postgres 的 uuid 解析报错。
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function isUuid(value: string): boolean {
-  return UUID_RE.test(value);
-}
-
 function normalizeIds(ids: string[]): string[] {
   return Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
 }
@@ -39,9 +30,7 @@ export async function getRestockSummaryForProducts(input: {
   productIds: string[];
   maxRequesters?: number;
 }): Promise<Record<string, RestockSummary>> {
-  const debug = process.env.DEBUG_RESTOCK === "1";
-
-  const productIds = normalizeIds(input.productIds).filter(isUuid);
+  const productIds = normalizeIds(input.productIds);
   const maxRequesters = Math.max(1, input.maxRequesters ?? DEFAULT_MAX_REQUESTERS);
 
   if (productIds.length === 0) {
@@ -60,7 +49,7 @@ export async function getRestockSummaryForProducts(input: {
 
     const countMap = new Map(counts.map((row) => [row.productId, row.count]));
 
-    // 使用 window function 在 DB 侧做“每个商品取最近 N 条”，避免拉全表再在 JS 里切片
+    // 每个商品取最近 N 条
     const ranked = db
       .select({
         productId: restockRequests.productId,
@@ -112,11 +101,7 @@ export async function getRestockSummaryForProducts(input: {
 
     return result;
   } catch (error) {
-    // 兜底：避免因为统计表缺失/权限问题导致前台页面不可用。
-    // 说明：该函数可能在构建期/预渲染阶段触发；为了避免 Vercel Build Logs 被刷屏，默认不打印错误。
-    if (debug) {
-      console.error("[getRestockSummaryForProducts] 查询催补货统计失败:", error);
-    }
+    console.error("[getRestockSummaryForProducts] 查询催补货统计失败:", error);
     return {};
   }
 }
@@ -125,6 +110,40 @@ export interface RequestRestockResult {
   success: boolean;
   message: string;
   summary?: RestockSummary;
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
+function publicRestockErrorMessage(error: unknown): string {
+  // 不要把底层数据库错误（含 SQL / 参数）透传到客户端
+  const code = (error as any)?.code as string | undefined;
+
+  // 外键约束：商品不存在/已删除
+  if (code === "23503") {
+    return "商品信息无效或已下架，请刷新页面后重试";
+  }
+
+  // 唯一冲突：通常是并发点击导致（用户已催过）
+  if (code === "23505") {
+    return "你已经催过该商品啦";
+  }
+
+  return "催补货失败，请稍后重试";
+}
+
+function logDbError(scope: string, error: unknown) {
+  const e = error as any;
+  // 避免把 "Failed query: ... params: ..." 写进日志
+  console.error(scope, {
+    code: e?.code,
+    detail: e?.detail,
+    constraint: e?.constraint,
+    table: e?.table,
+  });
 }
 
 /**
@@ -136,7 +155,6 @@ export async function requestRestock(productId: string): Promise<RequestRestockR
     | { id?: string; username?: string; name?: string; image?: string; provider?: string }
     | undefined;
 
-  // 关键：只允许 Linux DO 登录用户参与，避免游客刷量 + 方便展示头像 group
   if (!user?.id || user.provider !== "linux-do") {
     return { success: false, message: "请先使用 Linux DO 登录后再催补货" };
   }
@@ -150,15 +168,21 @@ export async function requestRestock(productId: string): Promise<RequestRestockR
   const userImage = user.image ?? null;
 
   try {
-    // 用 ON CONFLICT 做幂等：同一用户重复点击只会返回同一个记录，不会导致计数被刷
+    // 更稳：先 UPDATE，若不存在再 INSERT（不依赖 ON CONFLICT）
     await db.execute(sql`
+      WITH updated AS (
+        UPDATE restock_requests
+        SET username = ${username},
+            user_image = ${userImage}
+        WHERE product_id = ${safeProductId}
+          AND user_id = ${user.id}
+        RETURNING 1
+      )
       INSERT INTO restock_requests (product_id, user_id, username, user_image)
-      VALUES (${safeProductId}, ${user.id}, ${username}, ${userImage})
-      ON CONFLICT (product_id, user_id) DO UPDATE
-      SET user_image = EXCLUDED.user_image
+      SELECT ${safeProductId}, ${user.id}, ${username}, ${userImage}
+      WHERE NOT EXISTS (SELECT 1 FROM updated);
     `);
 
-    // 刷新商店前台缓存：让其他用户尽快看到计数变化（同时仍保持 ISR 性能）
     await revalidateAllStoreCache();
 
     const summaryMap = await getRestockSummaryForProducts({ productIds: [safeProductId] });
@@ -168,10 +192,22 @@ export async function requestRestock(productId: string): Promise<RequestRestockR
       summary: summaryMap[safeProductId],
     };
   } catch (error) {
-    console.error("[requestRestock] 记录催补货失败:", error);
+    logDbError("[requestRestock] 记录催补货失败", error);
+
+    // 并发造成的 23505：当作“已催”返回最新统计
+    const code = (error as any)?.code as string | undefined;
+    if (code === "23505") {
+      const summaryMap = await getRestockSummaryForProducts({ productIds: [safeProductId] });
+      return {
+        success: true,
+        message: "你已经催过该商品啦",
+        summary: summaryMap[safeProductId],
+      };
+    }
+
     return {
       success: false,
-      message: error instanceof Error ? error.message : "催补货失败，请稍后重试",
+      message: publicRestockErrorMessage(error),
     };
   }
 }
